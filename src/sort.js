@@ -1,6 +1,7 @@
 "use strict";
 
-const validateNpmPackageName = require("validate-npm-package-name");
+const fs = require('fs')
+const path = require('path')
 
 module.exports = {
   meta: {
@@ -71,6 +72,7 @@ function maybeReportSorting(imports, context) {
 
 function printSortedImports(importItems, sourceCode) {
   const sideEffectImports = [];
+  const reactImports = [];
   const packageImports = [];
   const relativeImports = [];
   const restImports = [];
@@ -78,6 +80,8 @@ function printSortedImports(importItems, sourceCode) {
   for (const item of importItems) {
     if (item.group === "sideEffect") {
       sideEffectImports.push(item);
+    } else if (item.group === "react") {
+      reactImports.push(item);
     } else if (item.group === "package") {
       packageImports.push(item);
     } else if (item.group === "relative") {
@@ -89,6 +93,7 @@ function printSortedImports(importItems, sourceCode) {
 
   const sortedItems = [
     sideEffectImports,
+    sortImportItems(reactImports),
     sortImportItems(packageImports),
     sortImportItems(restImports),
     sortImportItems(relativeImports),
@@ -795,21 +800,25 @@ function isSideEffectImport(importNode, sourceCode) {
   );
 }
 
+function isReactImport(source) {
+  return REACT_IMPORTS.includes(source)
+}
+
+const REACT_IMPORTS = ['react', 'react-dom', 'prop-types']
+const LOCAL_IMPORTS = fs.readdirSync(path.join(process.cwd(), 'js'))
+
+function isLocalImport(source) {
+  const isLocal = LOCAL_IMPORTS.includes(source.split('/')[0])
+  return isLocal
+}
+
 const PACKAGE_REGEX = /^(?:@[^/]+\/)?[^/]+/;
 
 // import fs from "fs";
 // import { compose } from "lodash/fp";
 // import { storiesOf } from '@storybook/react';
 function isPackageImport(source) {
-  const match = PACKAGE_REGEX.exec(source);
-  if (match == null) {
-    return false;
-  }
-  const { errors = [], warnings = [] } = validateNpmPackageName(match[0]);
-  return (
-    errors.length === 0 &&
-    warnings.filter(warning => !warning.includes("core module")).length === 0
-  );
+  return !isLocalImport(source)
 }
 
 // import a from "."
@@ -863,6 +872,8 @@ function getGroupAndSource(importNode, sourceCode) {
       : [rawSource, ""];
   const group = isSideEffectImport(importNode, sourceCode)
     ? "sideEffect"
+    : isReactImport(source)
+    ? "react"
     : isPackageImport(source)
     ? "package"
     : isRelativeImport(source)
